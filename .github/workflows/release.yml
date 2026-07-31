@@ -1,0 +1,101 @@
+name: Release
+
+# Manual only. This fork exists for one reason — Vertigo and ScalableLux are
+# mutually incompatible on 1.21.11 — so the default build target is 1.21.11,
+# not the whole matrix buildAll.sh covers.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.2.4+mms.1) — must already match mod_version in gradle_common.properties"
+        required: true
+        type: string
+      minecraft_version:
+        description: "Minecraft version to build against"
+        required: true
+        default: "1.21.11"
+        type: string
+      prerelease:
+        description: "Mark the GitHub release as a pre-release"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          INPUT="${{ inputs.version }}"
+          MC="${{ inputs.minecraft_version }}"
+
+          # mod_version lives in gradle_common.properties; gradle.properties is
+          # generated from it by the "Switch to <mc>" task and must not be the
+          # source of truth here.
+          DECLARED=$(grep -E '^[[:space:]]*mod_version[[:space:]]*=' gradle_common.properties \
+                     | cut -d= -f2- | tr -d '[:space:]')
+          if [[ "$INPUT" != "$DECLARED" ]]; then
+            echo "ERROR: version mismatch."
+            echo "  requested:                 $INPUT"
+            echo "  gradle_common.properties:  $DECLARED"
+            echo
+            echo "Bump mod_version in gradle_common.properties and commit it first."
+            exit 1
+          fi
+
+          if [ ! -f "gradle_${MC}.properties" ]; then
+            echo "ERROR: no gradle_${MC}.properties in this repo. Available:"
+            ls gradle_*.properties
+            exit 1
+          fi
+          echo "Version $INPUT for MC $MC confirmed."
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Upstream selects the target by regenerating gradle.properties from
+      # gradle_common.properties + gradle_<mc>.properties. The source sets are
+      # keyed off minecraft_version, so this has to run before build.
+      - name: Select Minecraft version
+        run: ./gradlew "Switch to ${{ inputs.minecraft_version }}" --no-daemon
+
+      - name: Build
+        run: ./gradlew build --no-daemon --stacktrace
+
+      - name: Collect artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find build/libs -maxdepth 1 -name '*.jar' \
+            ! -name '*-dev.jar' \
+            ! -name '*-dev-shadow.jar' \
+            -exec cp {} dist/ \;
+          ls -la dist
+          test -n "$(ls -A dist)" || { echo "ERROR: no jars produced"; exit 1; }
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.version }}"
+          MC="${{ inputs.minecraft_version }}"
+          FLAGS=(--generate-notes --title "Vertigo v${VERSION} (MC ${MC})")
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            FLAGS+=(--prerelease)
+          fi
+          gh release create "v${VERSION}" dist/*.jar \
+            --target "${{ github.sha }}" \
+            "${FLAGS[@]}"
