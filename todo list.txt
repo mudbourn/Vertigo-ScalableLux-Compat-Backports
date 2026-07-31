@@ -1,0 +1,11 @@
+find more vanilla packets being sent when they shouldn't be.
+
+I think I only have a "vertigo installed" packet registered in one direction and not the other.
+	register it in both directions.
+	do this next time I need a packet protocol change.
+
+mod compatibility:
+
+bugs:
+
+changelog:

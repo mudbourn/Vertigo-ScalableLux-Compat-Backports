@@ -1,0 +1,10 @@
+/.idea/
+/out/
+/.gradle
+/build/
+/run/
+/dependencies/
+/jijDependencies/
+/logs/
+/releases/
+/server/
