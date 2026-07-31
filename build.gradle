@@ -157,10 +157,10 @@ tasks.withType(JavaCompile).configureEach() {
 }
 
 java() {
-	def javaVersion = JavaVersion.toVersion(targetJavaVersion)
-	if (JavaVersion.current() < javaVersion) {
-		toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
-	}
+	// pinned unconditionally: the Manifold javac plugin can't open JDK internals on
+	// JDK 25 (JdkAccessUtil looks up Class.getDeclaredMethods0, which no longer exists),
+	// so letting a newer local JDK compile this fails before any source is read.
+	toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
 	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
 	// if it is present.
 	// If you remove this line, sources will not be generated.
