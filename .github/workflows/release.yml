@@ -107,7 +107,6 @@ jobs:
       # Deliberately after the build. Committing the bump up front means a
       # failed build leaves main claiming a version that has no release.
       - name: Commit version bump
-        id: bumpcommit
         if: ${{ steps.version.outputs.bumped == 'true' && !inputs.dry_run }}
         run: |
           set -euo pipefail
@@ -116,7 +115,6 @@ jobs:
           git add gradle_common.properties
           git commit -m "Bump version to ${{ inputs.version }}"
           git push origin HEAD:${{ github.ref_name }}
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # A dry run still builds and still enforces the version check, so it can
       # be re-run against the current released version without burning a new
@@ -140,9 +138,11 @@ jobs:
           if [ "${{ inputs.prerelease }}" = "true" ]; then
             FLAGS+=(--prerelease)
           fi
-          # Tag the bump commit when there was one — github.sha still points at
-          # the pre-bump tree.
-          TARGET="${{ steps.bumpcommit.outputs.sha || github.sha }}"
+          # Target the branch, not a raw SHA. The bump commit (when there was
+          # one) is already pushed above, so the branch tip is the tree we want
+          # either way — and GitHub stores target_commitish verbatim. A SHA
+          # there makes packwiz's github updater, which matches releases against
+          # the branch named in the .pw.toml, find no release at all.
           gh release create "v${VERSION}" dist/*.jar \
-            --target "$TARGET" \
+            --target "${{ github.ref_name }}" \
             "${FLAGS[@]}"
