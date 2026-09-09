@@ -92,14 +92,14 @@ public class SectionTrackingManager extends TrackingManager {
 			if (bound.maxY < playerCenterY - range || bound.minY > playerCenterY + range) {
 				//player teleported a long distance vertically. use special logic for them.
 				for (int sectionY = bound.minY; sectionY <= bound.maxY; sectionY++) {
-					VertigoServerEvents.SECTION_UNLOADED.invoker().onSectionUnloaded(player, chunkX, bound.maxY, chunkZ);
-					ChunkSectionUnloadPacket.send(player, chunkX, bound.maxY, chunkZ);
+					VertigoServerEvents.SECTION_UNLOADED.invoker().onSectionUnloaded(player, chunkX, sectionY, chunkZ);
+					ChunkSectionUnloadPacket.send(player, chunkX, sectionY, chunkZ);
 				}
 				bound.minY = Math.max(playerCenterY - range, VersionUtil.sectionMinYInclusive(chunk));
 				bound.maxY = Math.min(playerCenterY + range, VersionUtil.sectionMaxYInclusive(chunk));
 				for (int sectionY = bound.minY; sectionY <= bound.maxY; sectionY++) {
 					ChunkSectionLoadPacket.send(player, chunk, sectionY);
-					VertigoServerEvents.SECTION_LOADED.invoker().onSectionLoaded(player, chunkX, bound.maxY, chunkZ);
+					VertigoServerEvents.SECTION_LOADED.invoker().onSectionLoaded(player, chunkX, sectionY, chunkZ);
 				}
 				changed = true;
 			}
