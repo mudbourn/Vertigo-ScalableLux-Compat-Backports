@@ -1,19 +1,16 @@
+# Release — thin caller. All logic lives in the reusable engine at
+# mudbourn/mms-pack/.github/workflows/mod-release.yml, which derives libs,
+# sibling composite builds, and version stamping from this repo's own tree.
+# Keep this file identical to mms-pack's .github/workflows/_caller-template.yml;
+# `mms-repos.py check-callers` enforces that.
 name: Release
 
-# Manual only. This fork exists for one reason — Vertigo and ScalableLux are
-# mutually incompatible on 1.21.11 — so the default build target is 1.21.11,
-# not the whole matrix buildAll.sh covers.
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g. 1.2.4+mms.1) — must already match mod_version in gradle_common.properties"
+        description: "Release version (e.g. 0.1.0) — authoritative; gradle.properties is bumped to match"
         required: true
-        type: string
-      minecraft_version:
-        description: "Minecraft version to build against"
-        required: true
-        default: "1.21.11"
         type: string
       prerelease:
         description: "Mark the GitHub release as a pre-release"
@@ -21,128 +18,16 @@ on:
         type: boolean
         default: false
       dry_run:
-        description: "Build and validate only — do not tag or publish"
+        description: "Build and validate only — do not commit, tag, or publish"
         required: false
         type: boolean
         default: false
 
-permissions:
-  contents: write
-
 jobs:
   release:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v5
-
-      # The requested version is authoritative: if the properties file
-      # disagrees, bump it here rather than failing and making the release a
-      # two-step dance. No X.Y.Z check — fork versions carry a build suffix
-      # (1.2.4+mms.1).
-      - name: Resolve version
-        id: version
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          INPUT="${{ inputs.version }}"
-          MC="${{ inputs.minecraft_version }}"
-
-          if gh release view "v${INPUT}" >/dev/null 2>&1; then
-            echo "ERROR: release v${INPUT} already exists."
-            echo "Pick a new version, or use dry_run to rebuild without publishing."
-            exit 1
-          fi
-
-          # mod_version lives in gradle_common.properties; gradle.properties is
-          # generated from it by the "Switch to <mc>" task and must not be the
-          # source of truth here.
-          DECLARED=$(grep -E '^[[:space:]]*mod_version[[:space:]]*=' gradle_common.properties \
-                     | cut -d= -f2- | tr -d '[:space:]')
-          if [[ "$INPUT" == "$DECLARED" ]]; then
-            echo "gradle_common.properties already at $INPUT."
-            echo "bumped=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Bumping mod_version: $DECLARED -> $INPUT"
-            sed -i -E "s|^([[:space:]]*mod_version[[:space:]]*=).*|\\1 ${INPUT}|" gradle_common.properties
-            grep -E '^[[:space:]]*mod_version' gradle_common.properties
-            echo "bumped=true" >> "$GITHUB_OUTPUT"
-          fi
-
-          if [ ! -f "gradle_${MC}.properties" ]; then
-            echo "ERROR: no gradle_${MC}.properties in this repo. Available:"
-            ls gradle_*.properties
-            exit 1
-          fi
-          echo "Version $INPUT for MC $MC confirmed."
-
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - uses: gradle/actions/setup-gradle@v4
-
-      # Upstream selects the target by regenerating gradle.properties from
-      # gradle_common.properties + gradle_<mc>.properties. The source sets are
-      # keyed off minecraft_version, so this has to run before build.
-      - name: Select Minecraft version
-        run: ./gradlew "Switch to ${{ inputs.minecraft_version }}" --no-daemon
-
-      - name: Build
-        run: ./gradlew build --no-daemon --stacktrace
-
-      - name: Collect artifacts
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          find build/libs -maxdepth 1 -name '*.jar' \
-            ! -name '*-dev.jar' \
-            ! -name '*-dev-shadow.jar' \
-            -exec cp {} dist/ \;
-          ls -la dist
-          test -n "$(ls -A dist)" || { echo "ERROR: no jars produced"; exit 1; }
-
-      # Deliberately after the build. Committing the bump up front means a
-      # failed build leaves main claiming a version that has no release.
-      - name: Commit version bump
-        if: ${{ steps.version.outputs.bumped == 'true' && !inputs.dry_run }}
-        run: |
-          set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add gradle_common.properties
-          git commit -m "Bump version to ${{ inputs.version }}"
-          git push origin HEAD:${{ github.ref_name }}
-
-      # A dry run still builds and still enforces the version check, so it can
-      # be re-run against the current released version without burning a new
-      # one. Artifacts land on the run instead of on a release.
-      - name: Upload artifacts (dry run)
-        if: ${{ inputs.dry_run }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: Vertigo-${{ inputs.version }}
-          path: dist/*.jar
-
-      - name: Publish release
-        if: ${{ !inputs.dry_run }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          VERSION="${{ inputs.version }}"
-          MC="${{ inputs.minecraft_version }}"
-          FLAGS=(--generate-notes --title "Vertigo v${VERSION} (MC ${MC})")
-          if [ "${{ inputs.prerelease }}" = "true" ]; then
-            FLAGS+=(--prerelease)
-          fi
-          # Target the branch, not a raw SHA. The bump commit (when there was
-          # one) is already pushed above, so the branch tip is the tree we want
-          # either way — and GitHub stores target_commitish verbatim. A SHA
-          # there makes packwiz's github updater, which matches releases against
-          # the branch named in the .pw.toml, find no release at all.
-          gh release create "v${VERSION}" dist/*.jar \
-            --target "${{ github.ref_name }}" \
-            "${FLAGS[@]}"
+    uses: mudbourn/mms-pack/.github/workflows/mod-release.yml@main
+    secrets: inherit
+    with:
+      version: ${{ inputs.version }}
+      prerelease: ${{ inputs.prerelease }}
+      dry_run: ${{ inputs.dry_run }}
