@@ -161,6 +161,10 @@ java() {
 	// JDK 25 (JdkAccessUtil looks up Class.getDeclaredMethods0, which no longer exists),
 	// so letting a newer local JDK compile this fails before any source is read.
 	toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
+	// pin the vendor too: Manifold reflects into HotSpot-only JDK internals, so on an
+	// OpenJ9 JDK (IBM Semeru) ReflectUtil.method(...) returns null and Manifold init NPEs.
+	// Force a HotSpot toolchain even when Semeru 21 is the only other JDK 21 present.
+	toolchain.vendor = JvmVendorSpec.ADOPTIUM
 	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
 	// if it is present.
 	// If you remove this line, sources will not be generated.
